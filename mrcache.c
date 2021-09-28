@@ -677,6 +677,13 @@ int on_data(void *c, int fd, ssize_t nread, char *buf) {
       printf("Avg shift %.2f\n", (double)settings.read_shifts/settings.tot_reads);
       printf("Max shift %d\n", settings.max_shift);
       ht_stat(mrq_ht);
+      
+      //--22.08.2021 -fb
+      FILE *served_requests_file = fopen("served-requests.txt", "a");
+      chmod("served-requests.txt", S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH | S_IWOTH);
+      fprintf(served_requests_file, "%lu\n", settings.tot_reads + settings.tot_writes);
+      fclose(served_requests_file);
+      
       //ht_clear_lru_full( mrq_ht, 0, 0 );
       //printf("After full clear\n");
       //ht_stat(mrq_ht);

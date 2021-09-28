@@ -9,6 +9,9 @@ CFLAGS = -O3
 default: $(TARGET)
 all: default
 
+debug: CFLAGS = -g
+debug: all
+
 OBJECTS = $(patsubst %.c, %.o, $(wildcard *.c))
 HEADERS = $(wildcard *.h)
 
