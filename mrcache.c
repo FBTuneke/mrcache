@@ -676,6 +676,9 @@ int on_data(void *c, int fd, ssize_t nread, char *buf) {
       printf("Total writes %ld\n", settings.tot_writes);
       printf("Avg shift %.2f\n", (double)settings.read_shifts/settings.tot_reads);
       printf("Max shift %d\n", settings.max_shift);
+      printf("Nr of read SQEs: %lu\n", nr_of_read_sqes);
+      printf("Nr of total SQEs: %lu\n", nr_of_sqes);
+
       ht_stat(mrq_ht);
       
       //--22.08.2021 -fb
@@ -683,6 +686,13 @@ int on_data(void *c, int fd, ssize_t nread, char *buf) {
       chmod("served-requests.txt", S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH | S_IWOTH);
       fprintf(served_requests_file, "%lu\n", settings.tot_reads + settings.tot_writes);
       fclose(served_requests_file);
+      
+      //--29.09.2021 -fb
+      //FILE *requests_per_sqe_file; = fopen("requests-per-sqe.txt", "a");
+      //chmod("requests-per-sqe.txt", S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH | S_IWOTH);
+      //fprintf(requests_per_sqe_file, "%f\n", );
+      //fclose(requests_per_sqe_file);
+
       
       //ht_clear_lru_full( mrq_ht, 0, 0 );
       //printf("After full clear\n");
