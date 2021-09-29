@@ -20,6 +20,13 @@
 static uint64_t bytes = 0;
 static uint64_t fbytes = 0;
 
+
+uint64_t nr_of_writes = 0;
+uint64_t nr_of_writes_old = 0;
+uint64_t nr_of_sqes_old = 0;
+uint64_t nr_of_served_gets_old = 0;
+
+
 #define BUFFER_SIZE 32*1024
 
 // debug
@@ -154,25 +161,31 @@ static void conn_append( my_conn_t* c, char *data, int len ) {
 
 }
 
-static int conn_flush( my_conn_t *c ) {
-  ssize_t nwritten = 0;
+static int conn_flush(my_conn_t *c)
+{
+      ssize_t nwritten = 0;
 
-  while ( c->out_cur_sz > 0 ) {
-    nwritten = write(c->fd, c->out_p, c->out_cur_sz);
-    if ( nwritten <= 0 ) {
-      if ( nwritten == -1 && errno == EAGAIN ) {
-        mr_add_write_callback( loop, can_write, c, c->fd );
+      while (c->out_cur_sz > 0)
+      {
+            nwritten = write(c->fd, c->out_p, c->out_cur_sz);
+            if (nwritten <= 0)
+            {
+                  if (nwritten == -1 && errno == EAGAIN)
+                  {
+                        mr_add_write_callback(loop, can_write, c, c->fd);
+                  }
+                  c->stalled = true;
+                  return 0; // TODO -1 and not EAGAIN? Close connection? Make socket blocking and kill client
+            }
+            nr_of_writes++;
+            //test_data( c, c->out_p, nwritten );
+            c->out_p += nwritten;
+            c->out_cur_sz -= nwritten;
       }
-      c->stalled = true;
-      return 0; // TODO -1 and not EAGAIN? Close connection? Make socket blocking and kill client
-    }
-    //test_data( c, c->out_p, nwritten );
-    c->out_p += nwritten;
-    c->out_cur_sz -= nwritten;
-  }
-  c->out_p = c->out_buf;
-  return 1;
+      c->out_p = c->out_buf;
+      return 1;
 }
+
 static int conn_append_out( my_conn_t* c, char *p, int sz ) {
   //DBG printf(" append out %d \n", c->out_cur_sz);
   if ( c->out_p != c->out_buf ) return sz;
@@ -670,14 +683,21 @@ int on_data(void *c, int fd, ssize_t nread, char *buf) {
 
     } else if ( cmd == STAT ) {
 
+
+      float requests_per_syscall_since_last_stat = 0;
+      uint64_t nr_of_sqes_since_last_stat = 0;
+      uint64_t nr_of_writes_since_last_stat = 0;
+      uint64_t nr_of_syscalls_since_last_stat = 0;
+      
       printf("STAT\n");
       printf("Total reads  %ld\n", settings.tot_reads);
       printf("Total misses %ld\n", settings.misses);
       printf("Total writes %ld\n", settings.tot_writes);
       printf("Avg shift %.2f\n", (double)settings.read_shifts/settings.tot_reads);
       printf("Max shift %d\n", settings.max_shift);
-      printf("Nr of read SQEs: %lu\n", nr_of_read_sqes);
-      printf("Nr of total SQEs: %lu\n", nr_of_sqes);
+      printf("Nr of read SQEs: %lu\n", nr_of_read_sqes); //Globale Variable von meinem Mrloop
+      printf("Nr of writes %lu\n", nr_of_writes); //Globale Variable von meinem Mrloop    
+      printf("Nr of total SQEs: %lu\n", nr_of_sqes);  //Globale Variable von meinem Mrloop
 
       ht_stat(mrq_ht);
       
@@ -686,14 +706,23 @@ int on_data(void *c, int fd, ssize_t nread, char *buf) {
       chmod("served-requests.txt", S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH | S_IWOTH);
       fprintf(served_requests_file, "%lu\n", settings.tot_reads + settings.tot_writes);
       fclose(served_requests_file);
-      
-      //--29.09.2021 -fb
-      //FILE *requests_per_sqe_file; = fopen("requests-per-sqe.txt", "a");
-      //chmod("requests-per-sqe.txt", S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH | S_IWOTH);
-      //fprintf(requests_per_sqe_file, "%f\n", );
-      //fclose(requests_per_sqe_file);
 
+      //--29.09.2021 -fb Calculating number of requests per syscall write and io_uring_submit (read_SQEs, poll-SQEs)
+      nr_of_sqes_since_last_stat = nr_of_sqes - nr_of_sqes_old; //nr_of_sqes external variable from mrloop
+      nr_of_writes_since_last_stat = nr_of_writes - nr_of_writes_old;
+      nr_of_syscalls_since_last_stat = nr_of_writes_since_last_stat + nr_of_sqes_since_last_stat;
+
+      requests_per_syscall_since_last_stat = (long double)(settings.tot_reads - nr_of_served_gets_old) / (long double)nr_of_syscalls_since_last_stat;
       
+      nr_of_served_gets_old = settings.tot_reads;
+      nr_of_sqes_old = nr_of_sqes;
+      nr_of_writes_old = nr_of_writes;
+      
+      FILE *requests_per_syscall_file = fopen("requests-per-syscall.txt", "a");
+      chmod("requests-per-syscall.txt", S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH | S_IWOTH);
+      fprintf(requests_per_syscall_file, "%f\n", requests_per_syscall_since_last_stat);
+      fclose(requests_per_syscall_file);
+   
       //ht_clear_lru_full( mrq_ht, 0, 0 );
       //printf("After full clear\n");
       //ht_stat(mrq_ht);
